@@ -13,12 +13,10 @@ class Grid(object):
         self.cell_w = width / n_rows
         self.cell_h = width / n_cols
 
-        self.color = color
-
         self._fichas = []
 
     def add_ficha_ip(self, col, row, team):
-        ficha = Ficha(col * self.cell_w, row * self.cell_h, min(self.cell_w, self.cell_h), self.colors[f"TEAM{team}"])
+        ficha = Ficha(col * self.cell_w, row * self.cell_h, min(self.cell_w, self.cell_h), self.surfaces[f"team{team}"])
         self.add_ficha(ficha)
 
     def add_ficha(self, ficha): 
@@ -27,10 +25,6 @@ class Grid(object):
         self._fichas.append(ficha)
 
     def draw(self, surface):
-        def draw_cell(rect, offset):
-            ellipse_rect = pygame.Rect(rect.x + rect.width * offset, rect.y + rect.height * offset, rect.width * (1 - 2*offset), rect.height * (1 - 2*offset))
-            draw_anticircle(surface, ellipse_rect.center, ellipse_rect.width / 2, self.colors["BG"])
-
         for ficha in self._fichas:
             ficha.draw(surface)
 
@@ -40,17 +34,17 @@ class Grid(object):
         #draw shit
         for x in range(self.n_cols):
             for y in range(self.n_rows):
-                draw_cell(pygame.Rect(x * cell_w, y * cell_h, cell_w, cell_h), 0.05)
+                surface.blit(self.surfaces["cell"], (x * cell_w, y * cell_h)
     
     #TODO highlight, update, moving methods...
 
 class Ficha(object):
-    def __init__(self, x, y, radius, color):
-        self.rect = pygame.Rect(x, y, 2*radius, 2*radius)
-        self.color = color
+    def __init__(self, rect, surface):
+        self.rect = rect
+        self.surface = surface
 
     def draw(self, surface):
-        pygame.draw.circle(surface, self.color, (self.x, self.y), self.radius)
+        surface.blit(self.surface, rect)
 
     def __repr__(self):
         return f"Ficha({self.rect}, {self.color})"
