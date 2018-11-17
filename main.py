@@ -8,13 +8,18 @@
 import pygame
 import sys
 import time
+import powerups
 
 class GridError(Exception):
     pass
 
 class Grid(object):
     gravity = pygame.math.Vector2(0, 980)
-    
+
+    _powerups = []
+
+    _highlighted = (-1, -1) #(x, y), the direction is determined by the gravity
+
     surfaces = {}     
 
     def __init__(self, n_cols, n_rows, width=800, height=800, color=(0, 0, 255)):
@@ -39,7 +44,8 @@ class Grid(object):
             raise GridError("cant add ficha in top of another")
 
         ficha = Ficha(pygame.Rect(col * self.cell_w, row * self.cell_h, self.cell_w, self.cell_h), self.surfaces[f"team{team}"], team)
-        self.add_ficha(ficha)
+        ficha.vel += self.gravity * 0.25
+        self.add_ficha(ficha)    
 
     def add_ficha(self, ficha): 
         if not isinstance(ficha, Ficha): raise TypeError("Ur a dumbass, ficha should be an instance of Ficha")
@@ -51,18 +57,51 @@ class Grid(object):
 
     def draw(self, surface):
         pygame.draw.rect(surface, (0,0,0), surface.get_rect())
+        
+        if self._highlighted != (-1, -1):
+            if self.gravity.dot(pygame.math.Vector2(1, 0)) != 0:
+                for x in range(self.n_cols):
+                    #create shade of grey based on gravity
+                    if self.gravity.x < 0:
+                        color = [int(100 + 100 * (1 - x / self.n_cols))] * 3 
+                    else:
+                        color = [int(100 + 100 * x / self.n_cols)] * 3 
 
+                    to_highlight = pygame.Rect(x * self.cell_w, self._highlighted[1] * self.cell_h, self.cell_w, self.cell_h)
+                    pygame.draw.rect(surface, color, to_highlight)
+
+            elif self.gravity.dot(pygame.math.Vector2(0, 1)) != 0:
+                for y in range(self.n_rows):
+                    #create shade of grey based on gravity
+                    if self.gravity.y < 0:
+                        color = [int(100 + 100 * (1 - y / self.n_rows))] * 3 
+                    else:
+                        color = [int(100 + 100 * y / self.n_rows)] * 3 
+
+                    to_highlight = pygame.Rect(self._highlighted[0] * self.cell_h, y * self.cell_h, self.cell_w, self.cell_h)
+                    pygame.draw.rect(surface, color, to_highlight)
+
+            
         for ficha in self._fichas:
             ficha.draw(surface)
 
+        for powerup in self._powerups:
+            powerup.draw(surface)
+            
         #draw shit
         for x in range(self.n_cols):
             for y in range(self.n_rows):
-                surface.blit(self.surfaces["cell"], (x * self.cell_w, y * self.cell_h))
+                cell_rect = pygame.Rect(x * self.cell_w, y * self.cell_h, self.cell_w, self.cell_h)
+                surface.blit(self.surfaces["cell"], cell_rect)
     
     def update(self, dt):
         for ficha in self._fichas: 
             ficha.update(dt, self)
+
+        for powerup in self._powerups:
+            powerup.update(dt, self)
+
+        self._powerups = [powerup for powerup in self._powerups if not powerup.used]
     
     def anyone_moving(self):
         return any(f.is_moving() for f in self._fichas)
@@ -106,30 +145,61 @@ class Grid(object):
             
                 if curr_count == 4 and last_team != 0: return last_team
         
-        #TODO fix this
-        for ry in range(-self.n_rows, 1):
-            for x in range(self.n_cols):
-                y = ry + x
-                if y > 0:
+        for dx in range(-self.n_cols, self.n_cols):
+            curr_count = 0
+            last_team = 0
+            for dy in range(self.n_rows):
+                x = dx + dy
+                y = dy
+                if self.valid_coords(x, y):
                     if status[x][y] != last_team:
-                        last_team = status[x][ry]
+                        last_team = status[x][y]
                         curr_count = 1
                     else: curr_count += 1
-            
+
                     if curr_count == 4 and last_team != 0: return last_team
 
-        for ry in range(-self.n_rows, 1):
-            for x in range(self.n_cols - 1, -1, -1):
-                y = ry + x
-                if y > 0:
+        for dx in range(0, 2 * self.n_cols):
+            curr_count = 0
+            last_team = 0
+            for dy in range(self.n_rows):
+                x = dx - dy
+                y = dy
+                if self.valid_coords(x, y):
                     if status[x][y] != last_team:
-                        last_team = status[x][ry]
+                        last_team = status[x][y]
                         curr_count = 1
                     else: curr_count += 1
-            
+
                     if curr_count == 4 and last_team != 0: return last_team
 
         return 0
+
+    def valid_coords(self, x, y):
+        return x >= 0 and x < self.n_cols and y >= 0 and y < self.n_rows
+
+    def transform_coords(self, x, y):
+        return (int(x / self.cell_w), int(y / self.cell_h))
+    
+    def highlight(self, x, y):
+        if not self.valid_coords(x, y):
+            self.de_highlight()
+
+        self._highlighted = (x, y)
+    def de_highlight(self):
+        self._highlighted = (-1, -1)
+
+    def g_rotate_left(self):
+        if self.anyone_moving():
+            raise GridError("Cant change gravity while moving boi")
+        self.gravity.rotate_ip(-90)
+    def g_rotate_right(self):
+        if self.anyone_moving():
+            raise GridError("Cant change gravity while moving boi")
+        self.gravity.rotate_ip(90)
+
+    def add_powerup(self, powerup):
+       self._powerups.append(powerup) 
 
 class Ficha(object):
     def __init__(self, rect, surface, team):
@@ -163,6 +233,9 @@ class Ficha(object):
 main_surface = pygame.display.set_mode((800, 800))
 g = Grid(7, 7)
 
+pw = powerups.GravityPowerup(pygame.Rect(3 * g.cell_w, 3 * g.cell_h, g.cell_w, g.cell_h), pygame.image.load("gravity_powerup.png"))
+g.add_powerup(pw)
+
 last_time = time.clock()
 while True:
     dt = time.clock() - last_time
@@ -178,7 +251,11 @@ while True:
                 g.add_ficha_ip(col, row, 1 if evt.button == 1 else -1)
             except GridError:
                 pass
-    
+        
+        if evt.type == pygame.KEYDOWN and not g.anyone_moving():
+            if evt.unicode == "q": g.g_rotate_left()
+            elif evt.unicode == "e": g.g_rotate_right()
+
         if evt.type == pygame.QUIT:
             sys.exit()
 
@@ -187,7 +264,12 @@ while True:
         if v != 0:
             print(v)
             sys.exit()
-        
+    
+    if pygame.mouse.get_focused() != 0:
+        m_pos = g.transform_coords(*pygame.mouse.get_pos())
+        g.highlight(*m_pos)
+    else: g.de_highlight()
+
     g.update(dt)
     g.draw(main_surface)
     pygame.display.update()
